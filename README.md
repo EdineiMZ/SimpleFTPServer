@@ -1,2 +1,2 @@
 # SimpleFTPServer
-One FTP Server
+FTP Server
