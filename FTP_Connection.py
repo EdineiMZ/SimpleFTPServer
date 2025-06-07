@@ -1,0 +1,274 @@
+import os
+import logging
+import configparser
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+
+FIRST_RUN_FILE = 'connections.ini'
+from ftplib import FTP
+import threading
+import io
+
+# Configuração do log
+logging.basicConfig(
+    level=logging.INFO,
+    filename='ftp_client.log',
+    filemode='w',
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+
+def xor_cipher(data: bytes, key: str) -> bytes:
+    """Encrypt or decrypt data using a simple XOR cipher."""
+    if not key:
+        return data
+    key_bytes = key.encode('utf-8')
+    return bytes(b ^ key_bytes[i % len(key_bytes)] for i, b in enumerate(data))
+
+
+# Função para carregar as configurações de conexão do arquivo connections.ini
+def load_ftp_config():
+    config = configparser.ConfigParser()
+    try:
+        config.read('connections.ini')
+        host = config.get('FTP', 'host')
+        port = config.getint('FTP', 'port')
+        user = config.get('FTP', 'user')
+        password = config.get('FTP', 'password')
+        encryption_enabled = config.getboolean('FTP', 'encryption_enabled', fallback=False)
+        encryption_key = config.get('FTP', 'encryption_key', fallback='')
+        return host, port, user, password, encryption_enabled, encryption_key
+    except FileNotFoundError:
+        messagebox.showerror("Erro", "Arquivo 'connections.ini' não encontrado.")
+        logging.error("Arquivo 'connections.ini' não encontrado.")
+        raise  # Re-raise a exceção para que o programa possa lidar com isso
+
+
+def first_time_tutorial():
+    """Display a simple GUI to create the connections.ini file."""
+    tutorial = tk.Tk()
+    tutorial.title("Configuração Inicial")
+    tutorial.geometry("300x260")
+
+    host_var = tk.StringVar()
+    port_var = tk.StringVar(value="21")
+    user_var = tk.StringVar()
+    pass_var = tk.StringVar()
+    enc_var = tk.BooleanVar()
+    key_var = tk.StringVar()
+
+    ttk.Label(tutorial, text="Host:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(tutorial, textvariable=host_var).grid(row=0, column=1, padx=5)
+
+    ttk.Label(tutorial, text="Porta:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(tutorial, textvariable=port_var).grid(row=1, column=1, padx=5)
+
+    ttk.Label(tutorial, text="Usuário:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(tutorial, textvariable=user_var).grid(row=2, column=1, padx=5)
+
+    ttk.Label(tutorial, text="Senha:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(tutorial, textvariable=pass_var, show="*").grid(row=3, column=1, padx=5)
+
+    ttk.Checkbutton(tutorial, text="Habilitar criptografia", variable=enc_var).grid(row=4, column=0, columnspan=2, pady=5)
+
+    ttk.Label(tutorial, text="Chave de criptografia:").grid(row=5, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(tutorial, textvariable=key_var).grid(row=5, column=1, padx=5)
+
+    def save():
+        config = configparser.ConfigParser()
+        config['FTP'] = {
+            'host': host_var.get(),
+            'port': port_var.get(),
+            'user': user_var.get(),
+            'password': pass_var.get(),
+            'encryption_enabled': str(enc_var.get()),
+            'encryption_key': key_var.get(),
+        }
+        with open(FIRST_RUN_FILE, 'w') as f:
+            config.write(f)
+        messagebox.showinfo("Configurações", "Arquivo connections.ini criado")
+        tutorial.destroy()
+
+    ttk.Button(tutorial, text="Salvar", command=save).grid(row=6, column=0, columnspan=2, pady=10)
+
+    tutorial.mainloop()
+
+
+# Popup de "Aguarde"
+def show_wait_popup():
+    wait_popup = tk.Toplevel()
+    wait_popup.geometry("250x100")
+    wait_popup.title("Aguarde")
+    label_wait = tk.Label(wait_popup, text="Realizando operação...")
+    label_wait.pack(pady=30)
+    return wait_popup
+
+
+# Função para realizar upload de arquivo
+def upload_file(ftp, file_path, file_name, encryption_enabled=False, key=''):
+    try:
+        if not os.path.isfile(file_path):
+            logging.error(f"Caminho inválido para upload: {file_path}")
+            return False
+        with open(file_path, 'rb') as file:
+            data = file.read()
+        if encryption_enabled:
+            data = xor_cipher(data, key)
+        ftp.storbinary(f"STOR {file_name}", io.BytesIO(data))
+        logging.info(f"Upload do arquivo {file_name} concluído com sucesso")
+        return True
+    except Exception as e:
+        logging.error(f"Erro durante upload de arquivo: {str(e)}")
+        return False
+
+
+# Função para realizar download de arquivo
+def download_file(ftp, file_name, download_path, encryption_enabled=False, key=''):
+    try:
+        if not os.path.isdir(download_path):
+            logging.error(f"Diretório de download inválido: {download_path}")
+            return False
+        safe_name = os.path.basename(file_name)
+        local_file_path = os.path.join(download_path, safe_name)
+        buffer = io.BytesIO()
+        ftp.retrbinary(f"RETR {file_name}", buffer.write)
+        data = buffer.getvalue()
+        if encryption_enabled:
+            data = xor_cipher(data, key)
+        with open(local_file_path, 'wb') as file:
+            file.write(data)
+        logging.info(f"Download do arquivo {file_name} concluído com sucesso")
+        return True
+    except Exception as e:
+        logging.error(f"Erro durante download de arquivo: {str(e)}")
+        return False
+
+
+# Função para listar arquivos do servidor FTP
+def list_files(ftp):
+    try:
+        files = ftp.nlst()
+        logging.info(f"Arquivos no diretório do servidor FTP: {files}")
+        return files
+    except Exception as e:
+        logging.error(f"Erro ao listar arquivos no servidor FTP: {str(e)}")
+        return None
+
+
+# Funções de interface gráfica
+def perform_ftp_operation_with_feedback_and_wait_popup(operation_func, *args):
+    wait_popup = show_wait_popup()
+    try:
+        host, port, user, password, enc_enabled, enc_key = load_ftp_config()
+        ftp = FTP()
+        ftp.connect(host, port)
+        ftp.login(user, password)
+
+        operation_result = operation_func(
+            ftp, *args, encryption_enabled=enc_enabled, key=enc_key
+        )
+        if operation_result:
+            messagebox.showinfo("Sucesso", "Operação realizada com sucesso")
+        else:
+            messagebox.showerror("Erro", "Erro durante a operação")
+    except Exception as e:
+        logging.error(f"Erro ao conectar ao servidor FTP: {str(e)}")
+        messagebox.showerror("Erro", f"Erro ao conectar ao servidor FTP: {str(e)}")
+    finally:
+        try:
+            ftp.quit()
+        except:
+            pass
+        wait_popup.destroy()
+
+
+def upload():
+    file_path = filedialog.askopenfilename(initialdir="/", title="Selecione o arquivo")
+    if not file_path:
+        return  # Cancelado pelo usuário
+
+    file_name = os.path.basename(file_path)
+    threading.Thread(target=perform_ftp_operation_with_feedback_and_wait_popup,
+                     args=(upload_file, file_path, file_name)).start()
+
+
+def download():
+    try:
+        host, port, user, password, _, _ = load_ftp_config()
+        ftp = FTP()
+        ftp.connect(host, port)
+        ftp.login(user, password)
+
+        files = list_files(ftp)
+        if not files:
+            messagebox.showerror("Erro", "Não foi possível listar arquivos no servidor FTP")
+            return
+
+        download_window = tk.Toplevel()
+        download_window.geometry("300x150")
+        download_window.title("Selecionar Arquivo para Download")
+
+        label = tk.Label(download_window, text="Selecione o arquivo para download:")
+        label.pack(pady=10)
+
+        selected_file = tk.StringVar()
+        selected_file.set(files[0] if files else "")  # Seleciona o primeiro arquivo por padrão
+        dropdown = ttk.Combobox(download_window, textvariable=selected_file, values=files, state="readonly", width=30)
+        dropdown.pack(pady=10)
+
+        def start_download():
+            file_name = selected_file.get()
+            if not file_name:
+                messagebox.showerror("Erro", "Nenhum arquivo selecionado")
+                return
+
+            download_path = filedialog.askdirectory(initialdir="/", title="Selecione onde salvar o arquivo")
+            if not download_path:
+                return  # Cancelado pelo usuário
+
+            download_window.destroy()
+            threading.Thread(
+                target=perform_ftp_operation_with_feedback_and_wait_popup,
+                args=(download_file, file_name, download_path)
+            ).start()
+
+        btn_download = tk.Button(download_window, text="Download", command=start_download)
+        btn_download.pack(pady=10)
+
+    except Exception as e:
+        logging.error(f"Erro ao conectar ao servidor FTP: {str(e)}")
+        messagebox.showerror("Erro", f"Erro ao conectar ao servidor FTP: {str(e)}")
+
+    finally:
+        try:
+            ftp.quit()
+        except:
+            pass
+
+
+# Funções de interface gráfica
+def main():
+    if not os.path.exists(FIRST_RUN_FILE):
+        first_time_tutorial()
+
+    try:
+        host, port, user, password, _, _ = load_ftp_config()
+    except FileNotFoundError:
+        messagebox.showerror("Erro", "Arquivo 'connections.ini' não encontrado. O programa será encerrado.")
+        return
+
+    clienttk = tk.Tk()
+    clienttk.title("Cliente FTP")
+    clienttk.geometry("300x200")
+
+    bt1 = tk.Button(clienttk, width=20, text="Upload de Arquivo", command=upload)
+    bt1.place(x=50, y=50)
+
+    bt2 = tk.Button(clienttk, width=20, text="Download de Arquivo", command=download)
+    bt2.place(x=50, y=100)
+
+    clienttk.mainloop()
+
+
+if __name__ == '__main__':
+    main()
