@@ -122,6 +122,9 @@ def upload_file(ftp, file_path, file_name, encryption_enabled=False, key=''):
         return False
 
 
+# Definição do host padrão para a conexão do cliente
+host_var = tk.StringVar(value='127.0.0.1')
+
 # Função para realizar download de arquivo
 def download_file(ftp, file_name, download_path, encryption_enabled=False, key=''):
     try:

@@ -20,7 +20,7 @@ file encryption.
 1. Run the server
 2. Run the client
 3. Connect to the server
-4. Use the client to upload and download files -- configure the connection settings in the connections.ini.
+4. Use the client to upload and download files -- configure the connection settings in the connections.ini. The client defaults to connecting to `127.0.0.1` unless you override `host` in that file.
 5. To use the FTP server, you need to configure the config.ini to start up the server
 
 ## How to run the server
