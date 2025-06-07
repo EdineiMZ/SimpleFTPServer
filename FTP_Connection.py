@@ -14,6 +14,11 @@ logging.basicConfig(level=logging.INFO, filename='ftp_client.log', filemode='w',
 # Função para carregar as configurações de conexão do arquivo connections.ini
 def load_ftp_config():
     config = configparser.ConfigParser()
+    if not os.path.exists('connections.ini'):
+        messagebox.showerror("Erro", "Arquivo 'connections.ini' não encontrado.")
+        logging.error("Arquivo 'connections.ini' não encontrado.")
+        raise FileNotFoundError("connections.ini not found")
+
     try:
         config.read('connections.ini')
         host = config.get('FTP', 'host')
@@ -21,10 +26,10 @@ def load_ftp_config():
         user = config.get('FTP', 'user')
         password = config.get('FTP', 'password')
         return host, port, user, password
-    except FileNotFoundError:
-        messagebox.showerror("Erro", "Arquivo 'connections.ini' não encontrado.")
-        logging.error("Arquivo 'connections.ini' não encontrado.")
-        raise  # Re-raise a exceção para que o programa possa lidar com isso
+    except configparser.Error as e:
+        messagebox.showerror("Erro", f"Configuração inválida: {e}")
+        logging.error(f"Erro ao ler 'connections.ini': {str(e)}")
+        raise
 
 
 # Popup de "Aguarde"
