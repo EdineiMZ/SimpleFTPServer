@@ -5,10 +5,23 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from ftplib import FTP
 import threading
+import io
 
 # Configuração do log
-logging.basicConfig(level=logging.INFO, filename='ftp_client.log', filemode='w',
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    filename='ftp_client.log',
+    filemode='w',
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+
+def xor_cipher(data: bytes, key: str) -> bytes:
+    """Encrypt or decrypt data using a simple XOR cipher."""
+    if not key:
+        return data
+    key_bytes = key.encode('utf-8')
+    return bytes(b ^ key_bytes[i % len(key_bytes)] for i, b in enumerate(data))
 
 
 # Função para carregar as configurações de conexão do arquivo connections.ini
@@ -20,7 +33,9 @@ def load_ftp_config():
         port = config.getint('FTP', 'port')
         user = config.get('FTP', 'user')
         password = config.get('FTP', 'password')
-        return host, port, user, password
+        encryption_enabled = config.getboolean('FTP', 'encryption_enabled', fallback=False)
+        encryption_key = config.get('FTP', 'encryption_key', fallback='')
+        return host, port, user, password, encryption_enabled, encryption_key
     except FileNotFoundError:
         messagebox.showerror("Erro", "Arquivo 'connections.ini' não encontrado.")
         logging.error("Arquivo 'connections.ini' não encontrado.")
@@ -38,13 +53,16 @@ def show_wait_popup():
 
 
 # Função para realizar upload de arquivo
-def upload_file(ftp, file_path, file_name):
+def upload_file(ftp, file_path, file_name, encryption_enabled=False, key=''):
     try:
         if not os.path.isfile(file_path):
             logging.error(f"Caminho inválido para upload: {file_path}")
             return False
         with open(file_path, 'rb') as file:
-            ftp.storbinary(f"STOR {file_name}", file)
+            data = file.read()
+        if encryption_enabled:
+            data = xor_cipher(data, key)
+        ftp.storbinary(f"STOR {file_name}", io.BytesIO(data))
         logging.info(f"Upload do arquivo {file_name} concluído com sucesso")
         return True
     except Exception as e:
@@ -53,15 +71,20 @@ def upload_file(ftp, file_path, file_name):
 
 
 # Função para realizar download de arquivo
-def download_file(ftp, file_name, download_path):
+def download_file(ftp, file_name, download_path, encryption_enabled=False, key=''):
     try:
         if not os.path.isdir(download_path):
             logging.error(f"Diretório de download inválido: {download_path}")
             return False
         safe_name = os.path.basename(file_name)
         local_file_path = os.path.join(download_path, safe_name)
+        buffer = io.BytesIO()
+        ftp.retrbinary(f"RETR {file_name}", buffer.write)
+        data = buffer.getvalue()
+        if encryption_enabled:
+            data = xor_cipher(data, key)
         with open(local_file_path, 'wb') as file:
-            ftp.retrbinary(f"RETR {file_name}", file.write)
+            file.write(data)
         logging.info(f"Download do arquivo {file_name} concluído com sucesso")
         return True
     except Exception as e:
@@ -84,12 +107,14 @@ def list_files(ftp):
 def perform_ftp_operation_with_feedback_and_wait_popup(operation_func, *args):
     wait_popup = show_wait_popup()
     try:
-        host, port, user, password = load_ftp_config()
+        host, port, user, password, enc_enabled, enc_key = load_ftp_config()
         ftp = FTP()
         ftp.connect(host, port)
         ftp.login(user, password)
 
-        operation_result = operation_func(ftp, *args)
+        operation_result = operation_func(
+            ftp, *args, encryption_enabled=enc_enabled, key=enc_key
+        )
         if operation_result:
             messagebox.showinfo("Sucesso", "Operação realizada com sucesso")
         else:
@@ -117,7 +142,7 @@ def upload():
 
 def download():
     try:
-        host, port, user, password = load_ftp_config()
+        host, port, user, password, _, _ = load_ftp_config()
         ftp = FTP()
         ftp.connect(host, port)
         ftp.login(user, password)
@@ -172,7 +197,7 @@ def download():
 # Funções de interface gráfica
 def main():
     try:
-        host, port, user, password = load_ftp_config()
+        host, port, user, password, _, _ = load_ftp_config()
     except FileNotFoundError:
         messagebox.showerror("Erro", "Arquivo 'connections.ini' não encontrado. O programa será encerrado.")
         return

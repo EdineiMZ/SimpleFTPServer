@@ -42,6 +42,8 @@ def test_load_config(tmp_path):
                     'MAX_CONNECTIONS_PER_IP=2\n'
                     'TIMEOUT=60\n'
                     'LOG_LEVEL=DEBUG\n'
+                    'ENCRYPTION_ENABLED=True\n'
+                    'ENCRYPTION_KEY=mykey\n'
                     '[USERS]\nFTP_USER_MASTER=master\n'
                     'FTP_PASSWORD_MASTER=pass\n'
                     'FTP_PERM_MASTER=elradfmw\nFTP_USER_DEFAULT=guest\n'
@@ -63,19 +65,23 @@ def test_load_config(tmp_path):
     assert result[15] == 2
     assert result[16] == 60
     assert result[17] == 'DEBUG'
+    assert result[18] is True
+    assert result[19] == 'mykey'
 
 
 def test_upload_file(tmp_path):
     fake = FakeFTP()
     src = tmp_path / 'src.txt'
     src.write_text('data')
-    assert FTP_Connection.upload_file(fake, str(src), 'dest.txt')
-    assert fake.stored['dest.txt'] == b'data'
+    assert FTP_Connection.upload_file(fake, str(src), 'dest.txt', True, 'k')
+    expected = FTP_Connection.xor_cipher(b'data', 'k')
+    assert fake.stored['dest.txt'] == expected
 
 
 def test_download_file(tmp_path):
     fake = FakeFTP()
-    fake.files['src.txt'] = b'download-data'
-    assert FTP_Connection.download_file(fake, 'src.txt', str(tmp_path))
+    encrypted = FTP_Connection.xor_cipher(b'download-data', 'k')
+    fake.files['src.txt'] = encrypted
+    assert FTP_Connection.download_file(fake, 'src.txt', str(tmp_path), True, 'k')
     output = (tmp_path / 'src.txt').read_bytes()
     assert output == b'download-data'

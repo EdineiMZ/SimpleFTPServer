@@ -1,8 +1,10 @@
 # SimpleFTPServer
 
 - [x] Configurable TLS, logging and connection limits
-1. Configure the `config.ini` file with the server address and users. Optional
-   fields allow enabling TLS (`USE_TLS`), setting certificate paths, connection
+- [x] Optional XOR-based encryption using a user-defined key
+4. Use the client to upload and download files -- configure the connection settings in `connections.ini`.
+5. To enable file encryption, set `encryption_enabled` and `encryption_key` in both `connections.ini` and `config.ini`.
+6. Configure the `config.ini` file to start up the server
    limits and log level.
 2. Ensure the dependencies are installed (`pyftpdlib`).
 3. Run the server with `python FTP_server.py`.

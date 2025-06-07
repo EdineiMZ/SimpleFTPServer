@@ -40,6 +40,8 @@ def load_config():
     MAX_CONNECTIONS_PER_IP = config.getint('FTP_SERVER', 'MAX_CONNECTIONS_PER_IP', fallback=5)
     TIMEOUT = config.getint('FTP_SERVER', 'TIMEOUT', fallback=120)
     LOG_LEVEL = config.get('FTP_SERVER', 'LOG_LEVEL', fallback='INFO').upper()
+    ENCRYPTION_ENABLED = config.getboolean('FTP_SERVER', 'ENCRYPTION_ENABLED', fallback=False)
+    ENCRYPTION_KEY = config.get('FTP_SERVER', 'ENCRYPTION_KEY', fallback='')
 
     return (
         FTP_HOST,
@@ -60,6 +62,8 @@ def load_config():
         MAX_CONNECTIONS_PER_IP,
         TIMEOUT,
         LOG_LEVEL,
+        ENCRYPTION_ENABLED,
+        ENCRYPTION_KEY,
     )
 
 
@@ -83,6 +87,8 @@ def start_ftp_server():
         MAX_CONNECTIONS_PER_IP,
         TIMEOUT,
         LOG_LEVEL,
+        ENCRYPTION_ENABLED,
+        ENCRYPTION_KEY,
     ) = load_config()
 
     # Cria um objeto authorizer com credenciais dummy
@@ -318,6 +324,8 @@ if __name__ == '__main__':
         MAX_CONNECTIONS_PER_IP,
         TIMEOUT,
         LOG_LEVEL,
+        ENCRYPTION_ENABLED,
+        ENCRYPTION_KEY,
     ) = load_config()
 
     log_level = getattr(logging, LOG_LEVEL, logging.INFO)
