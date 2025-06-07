@@ -143,8 +143,10 @@ def download():
                 return  # Cancelado pelo usuário
 
             download_window.destroy()
-            threading.Thread(target=perform_ftp_operation_with_feedback_and_wait_popup,
-                             args=(download_file, ftp, file_name, download_path)).start()
+            threading.Thread(
+                target=perform_ftp_operation_with_feedback_and_wait_popup,
+                args=(download_file, file_name, download_path)
+            ).start()
 
         btn_download = tk.Button(download_window, text="Download", command=start_download)
         btn_download.pack(pady=10)

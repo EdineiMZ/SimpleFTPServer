@@ -6,7 +6,7 @@ One FTP Server
 ## Features
 - [x] FTP Server
 - [x] FTP Client
-- [x] FTP Server and Client with GUI and Multithreading and File Transfer and File Download
+- [x] FTP Server and Client with GUI, multithreading and file upload/download
 
 ## How to use
 1. Run the server
@@ -16,7 +16,7 @@ One FTP Server
 5. To use the FTP server, you need to configure the config.ini to start up the server
 
 ## How to run the server
-1. At folder dist, run the FTP_server.exe
-2. Configure the config.ini file to set the server's IP and port
-3. Run the server
+1. Configure the config.ini file to set the server's IP and port
+2. Ensure the dependencies are installed (pyftpdlib)
+3. Run the server with `python FTP_server.py`
 
