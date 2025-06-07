@@ -3,6 +3,8 @@ import logging
 import configparser
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+
+FIRST_RUN_FILE = 'connections.ini'
 from ftplib import FTP
 import threading
 import io
@@ -40,6 +42,56 @@ def load_ftp_config():
         messagebox.showerror("Erro", "Arquivo 'connections.ini' não encontrado.")
         logging.error("Arquivo 'connections.ini' não encontrado.")
         raise  # Re-raise a exceção para que o programa possa lidar com isso
+
+
+def first_time_tutorial():
+    """Display a simple GUI to create the connections.ini file."""
+    tutorial = tk.Tk()
+    tutorial.title("Configuração Inicial")
+    tutorial.geometry("300x260")
+
+    host_var = tk.StringVar()
+    port_var = tk.StringVar(value="21")
+    user_var = tk.StringVar()
+    pass_var = tk.StringVar()
+    enc_var = tk.BooleanVar()
+    key_var = tk.StringVar()
+
+    ttk.Label(tutorial, text="Host:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(tutorial, textvariable=host_var).grid(row=0, column=1, padx=5)
+
+    ttk.Label(tutorial, text="Porta:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(tutorial, textvariable=port_var).grid(row=1, column=1, padx=5)
+
+    ttk.Label(tutorial, text="Usuário:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(tutorial, textvariable=user_var).grid(row=2, column=1, padx=5)
+
+    ttk.Label(tutorial, text="Senha:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(tutorial, textvariable=pass_var, show="*").grid(row=3, column=1, padx=5)
+
+    ttk.Checkbutton(tutorial, text="Habilitar criptografia", variable=enc_var).grid(row=4, column=0, columnspan=2, pady=5)
+
+    ttk.Label(tutorial, text="Chave de criptografia:").grid(row=5, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(tutorial, textvariable=key_var).grid(row=5, column=1, padx=5)
+
+    def save():
+        config = configparser.ConfigParser()
+        config['FTP'] = {
+            'host': host_var.get(),
+            'port': port_var.get(),
+            'user': user_var.get(),
+            'password': pass_var.get(),
+            'encryption_enabled': str(enc_var.get()),
+            'encryption_key': key_var.get(),
+        }
+        with open(FIRST_RUN_FILE, 'w') as f:
+            config.write(f)
+        messagebox.showinfo("Configurações", "Arquivo connections.ini criado")
+        tutorial.destroy()
+
+    ttk.Button(tutorial, text="Salvar", command=save).grid(row=6, column=0, columnspan=2, pady=10)
+
+    tutorial.mainloop()
 
 
 # Popup de "Aguarde"
@@ -196,6 +248,9 @@ def download():
 
 # Funções de interface gráfica
 def main():
+    if not os.path.exists(FIRST_RUN_FILE):
+        first_time_tutorial()
+
     try:
         host, port, user, password, _, _ = load_ftp_config()
     except FileNotFoundError:
