@@ -2,7 +2,7 @@ import os
 import logging
 from configparser import ConfigParser
 from pyftpdlib.authorizers import DummyAuthorizer
-from pyftpdlib.handlers import FTPHandler
+from pyftpdlib.handlers import FTPHandler, TLS_FTPHandler
 from pyftpdlib.servers import FTPServer
 
 
@@ -32,15 +32,58 @@ def load_config():
     # IPs bloqueados (Blacklist)
     IP_BLACKLIST = [ip.strip() for ip in config.get('IP', 'IP_BLACKLIST').split(',')]
 
-    return FTP_HOST, FTP_PORT, FTP_USER_MASTER, FTP_PASSWORD_MASTER, \
-        FTP_PERM_MASTER, FTP_USER_DEFAULT, FTP_PASSWORD_DEFAULT, \
-        FTP_PERM_DEFAULT, ALLOWED_PATH, IP_WHITELIST, IP_BLACKLIST
+    # Opções adicionais
+    USE_TLS = config.getboolean('FTP_SERVER', 'USE_TLS', fallback=False)
+    CERTFILE = config.get('FTP_SERVER', 'CERTFILE', fallback='')
+    KEYFILE = config.get('FTP_SERVER', 'KEYFILE', fallback='')
+    MAX_CONNECTIONS = config.getint('FTP_SERVER', 'MAX_CONNECTIONS', fallback=256)
+    MAX_CONNECTIONS_PER_IP = config.getint('FTP_SERVER', 'MAX_CONNECTIONS_PER_IP', fallback=5)
+    TIMEOUT = config.getint('FTP_SERVER', 'TIMEOUT', fallback=120)
+    LOG_LEVEL = config.get('FTP_SERVER', 'LOG_LEVEL', fallback='INFO').upper()
+
+    return (
+        FTP_HOST,
+        FTP_PORT,
+        FTP_USER_MASTER,
+        FTP_PASSWORD_MASTER,
+        FTP_PERM_MASTER,
+        FTP_USER_DEFAULT,
+        FTP_PASSWORD_DEFAULT,
+        FTP_PERM_DEFAULT,
+        ALLOWED_PATH,
+        IP_WHITELIST,
+        IP_BLACKLIST,
+        USE_TLS,
+        CERTFILE,
+        KEYFILE,
+        MAX_CONNECTIONS,
+        MAX_CONNECTIONS_PER_IP,
+        TIMEOUT,
+        LOG_LEVEL,
+    )
 
 
 def start_ftp_server():
-    FTP_HOST, FTP_PORT, FTP_USER_MASTER, FTP_PASSWORD_MASTER, \
-        FTP_PERM_MASTER, FTP_USER_DEFAULT, FTP_PASSWORD_DEFAULT, \
-        FTP_PERM_DEFAULT, ALLOWED_PATH, IP_WHITELIST, IP_BLACKLIST = load_config()
+    (
+        FTP_HOST,
+        FTP_PORT,
+        FTP_USER_MASTER,
+        FTP_PASSWORD_MASTER,
+        FTP_PERM_MASTER,
+        FTP_USER_DEFAULT,
+        FTP_PASSWORD_DEFAULT,
+        FTP_PERM_DEFAULT,
+        ALLOWED_PATH,
+        IP_WHITELIST,
+        IP_BLACKLIST,
+        USE_TLS,
+        CERTFILE,
+        KEYFILE,
+        MAX_CONNECTIONS,
+        MAX_CONNECTIONS_PER_IP,
+        TIMEOUT,
+        LOG_LEVEL,
+    ) = load_config()
 
     # Cria um objeto authorizer com credenciais dummy
     authorizer = DummyAuthorizer()
@@ -63,11 +106,14 @@ def start_ftp_server():
     def check_ip_blacklist(remote_ip):
         return remote_ip in IP_BLACKLIST
 
+    # Define o handler baseado na configuração de TLS
+    base_handler = TLS_FTPHandler if USE_TLS else FTPHandler
+
     # Subclasse FTPHandler para adicionar verificação personalizada
-    class MyHandler(FTPHandler):
+    class MyHandler(base_handler):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
-            self.timeout = 120  # 2 minutos em segundos
+            self.timeout = TIMEOUT
 
         def ftp_STOR(self, file, mode='w'):
             if not check_path(file):
@@ -234,9 +280,17 @@ def start_ftp_server():
     # Cria um handler FTP com a verificação personalizada
     handler = MyHandler
     handler.authorizer = authorizer
+    if USE_TLS and CERTFILE:
+        handler.certfile = CERTFILE
+        if KEYFILE:
+            handler.keyfile = KEYFILE
+        handler.tls_control_required = True
+        handler.tls_data_required = True
 
     # Configura o endereço e porta do servidor
     server = FTPServer((FTP_HOST, FTP_PORT), handler)
+    server.max_cons = MAX_CONNECTIONS
+    server.max_cons_per_ip = MAX_CONNECTIONS_PER_IP
 
     # Inicia o servidor FTP
     logging.info(f'Servidor FTP iniciado em {FTP_HOST}:{FTP_PORT}')
@@ -245,13 +299,31 @@ def start_ftp_server():
 
 
 if __name__ == '__main__':
-    logging.basicConfig(filename='ftp_server.log', level=logging.INFO)
+    (
+        FTP_HOST,
+        FTP_PORT,
+        FTP_USER_MASTER,
+        FTP_PASSWORD_MASTER,
+        FTP_PERM_MASTER,
+        FTP_USER_DEFAULT,
+        FTP_PASSWORD_DEFAULT,
+        FTP_PERM_DEFAULT,
+        ALLOWED_PATH,
+        IP_WHITELIST,
+        IP_BLACKLIST,
+        USE_TLS,
+        CERTFILE,
+        KEYFILE,
+        MAX_CONNECTIONS,
+        MAX_CONNECTIONS_PER_IP,
+        TIMEOUT,
+        LOG_LEVEL,
+    ) = load_config()
+
+    log_level = getattr(logging, LOG_LEVEL, logging.INFO)
+    logging.basicConfig(filename='ftp_server.log', level=log_level)
     logging.info('Carregando configurações do servidor FTP...')
     logging.info('Lendo configurações do arquivo config.ini...')
-
-    FTP_HOST, FTP_PORT, FTP_USER_MASTER, FTP_PASSWORD_MASTER, \
-    FTP_PERM_MASTER, FTP_USER_DEFAULT, FTP_PASSWORD_DEFAULT, \
-    FTP_PERM_DEFAULT, ALLOWED_PATH, IP_WHITELIST, IP_BLACKLIST = load_config()
 
     print(f'Servidor FTP iniciado em {FTP_HOST}:{FTP_PORT}...')
     logging.info(f'Servidor FTP sendo iniciado em {FTP_HOST}:{FTP_PORT}...')

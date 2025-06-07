@@ -1,8 +1,11 @@
 # SimpleFTPServer
 
-One FTP Server
-
-
+- [x] Configurable TLS, logging and connection limits
+1. Configure the `config.ini` file with the server address and users. Optional
+   fields allow enabling TLS (`USE_TLS`), setting certificate paths, connection
+   limits and log level.
+2. Ensure the dependencies are installed (`pyftpdlib`).
+3. Run the server with `python FTP_server.py`.
 
 ## Features
 - [x] FTP Server

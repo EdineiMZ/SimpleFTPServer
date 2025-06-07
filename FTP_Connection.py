@@ -40,6 +40,9 @@ def show_wait_popup():
 # Função para realizar upload de arquivo
 def upload_file(ftp, file_path, file_name):
     try:
+        if not os.path.isfile(file_path):
+            logging.error(f"Caminho inválido para upload: {file_path}")
+            return False
         with open(file_path, 'rb') as file:
             ftp.storbinary(f"STOR {file_name}", file)
         logging.info(f"Upload do arquivo {file_name} concluído com sucesso")
@@ -52,7 +55,11 @@ def upload_file(ftp, file_path, file_name):
 # Função para realizar download de arquivo
 def download_file(ftp, file_name, download_path):
     try:
-        local_file_path = os.path.join(download_path, file_name)
+        if not os.path.isdir(download_path):
+            logging.error(f"Diretório de download inválido: {download_path}")
+            return False
+        safe_name = os.path.basename(file_name)
+        local_file_path = os.path.join(download_path, safe_name)
         with open(local_file_path, 'wb') as file:
             ftp.retrbinary(f"RETR {file_name}", file.write)
         logging.info(f"Download do arquivo {file_name} concluído com sucesso")

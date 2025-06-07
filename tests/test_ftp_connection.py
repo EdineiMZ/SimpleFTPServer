@@ -8,7 +8,10 @@ import types
 # Provide dummy pyftpdlib modules so FTP_server can be imported without the
 # real dependency installed.
 sys.modules.setdefault('pyftpdlib.authorizers', types.SimpleNamespace(DummyAuthorizer=object))
-sys.modules.setdefault('pyftpdlib.handlers', types.SimpleNamespace(FTPHandler=object))
+sys.modules.setdefault('pyftpdlib.handlers', types.SimpleNamespace(
+    FTPHandler=object,
+    TLS_FTPHandler=object,
+))
 sys.modules.setdefault('pyftpdlib.servers', types.SimpleNamespace(FTPServer=object))
 
 import FTP_Connection
@@ -32,8 +35,15 @@ class FakeFTP:
 
 def test_load_config(tmp_path):
     cfg = tmp_path / 'config.ini'
-    cfg.write_text('[FTP_SERVER]\nFTP_HOST=127.0.0.1\nFTP_PORT=2121\n'
-                    '[USERS]\nFTP_USER_MASTER=master\nFTP_PASSWORD_MASTER=pass\n'
+    cfg.write_text('[FTP_SERVER]\n'
+                    'FTP_HOST=127.0.0.1\nFTP_PORT=2121\n'
+                    'USE_TLS=False\n'
+                    'MAX_CONNECTIONS=100\n'
+                    'MAX_CONNECTIONS_PER_IP=2\n'
+                    'TIMEOUT=60\n'
+                    'LOG_LEVEL=DEBUG\n'
+                    '[USERS]\nFTP_USER_MASTER=master\n'
+                    'FTP_PASSWORD_MASTER=pass\n'
                     'FTP_PERM_MASTER=elradfmw\nFTP_USER_DEFAULT=guest\n'
                     'FTP_PASSWORD_DEFAULT=guestpass\nFTP_PERM_DEFAULT=elr\n'
                     '[PATH]\nALLOWED_PATH=/tmp\n'
@@ -46,6 +56,13 @@ def test_load_config(tmp_path):
         os.chdir(cwd)
     assert result[0] == '127.0.0.1'
     assert result[1] == 2121
+    assert result[11] is False
+    assert result[12] == ''
+    assert result[13] == ''
+    assert result[14] == 100
+    assert result[15] == 2
+    assert result[16] == 60
+    assert result[17] == 'DEBUG'
 
 
 def test_upload_file(tmp_path):
