@@ -6,6 +6,66 @@ from pyftpdlib.handlers import FTPHandler, TLS_FTPHandler
 from pyftpdlib.servers import FTPServer
 
 
+def create_config_interactively():
+    """Prompt the user for initial server configuration and write config.ini."""
+    print("Arquivo config.ini nao encontrado. Iniciando configuracao inicial.")
+
+    config = ConfigParser()
+
+    host = input("Host [127.0.0.1]: ") or "127.0.0.1"
+    port = input("Porta [2121]: ") or "2121"
+    master_user = input("Usuario mestre [master]: ") or "master"
+    master_pass = input("Senha do mestre [pass]: ") or "pass"
+    default_user = input("Usuario padrao [user]: ") or "user"
+    default_pass = input("Senha do padrao [pass]: ") or "pass"
+    allowed_path = input("Caminho permitido [/tmp]: ") or "/tmp"
+    ip_whitelist = input("IPs liberados (separados por virgula) [127.0.0.1]: ") or "127.0.0.1"
+    ip_blacklist = input("IPs bloqueados (separados por virgula) []: ") or ""
+    use_tls = input("Habilitar TLS? (s/n) [n]: ").lower() in {"s", "y"}
+    max_conn = input("Maximo de conexoes [256]: ") or "256"
+    max_conn_ip = input("Maximo de conexoes por IP [5]: ") or "5"
+    timeout = input("Timeout [120]: ") or "120"
+    log_level = input("Nivel de log [INFO]: ") or "INFO"
+    encryption_enabled = input("Habilitar criptografia? (s/n) [n]: ").lower() in {"s", "y"}
+    enc_key = ""
+    if encryption_enabled:
+        enc_key = input("Chave de criptografia: ")
+
+    config["FTP_SERVER"] = {
+        "FTP_HOST": host,
+        "FTP_PORT": port,
+        "USE_TLS": str(use_tls),
+        "CERTFILE": "",
+        "KEYFILE": "",
+        "MAX_CONNECTIONS": max_conn,
+        "MAX_CONNECTIONS_PER_IP": max_conn_ip,
+        "TIMEOUT": timeout,
+        "LOG_LEVEL": log_level,
+        "ENCRYPTION_ENABLED": str(encryption_enabled),
+        "ENCRYPTION_KEY": enc_key,
+    }
+
+    config["USERS"] = {
+        "FTP_USER_MASTER": master_user,
+        "FTP_PASSWORD_MASTER": master_pass,
+        "FTP_PERM_MASTER": "elradfmw",
+        "FTP_USER_DEFAULT": default_user,
+        "FTP_PASSWORD_DEFAULT": default_pass,
+        "FTP_PERM_DEFAULT": "elr",
+    }
+
+    config["PATH"] = {"ALLOWED_PATH": allowed_path}
+    config["IP"] = {
+        "IP_WHITELIST": ip_whitelist,
+        "IP_BLACKLIST": ip_blacklist,
+    }
+
+    with open("config.ini", "w") as f:
+        config.write(f)
+
+    print("Arquivo config.ini criado com sucesso.")
+
+
 def load_config():
     config = ConfigParser()
     config.read('config.ini')
@@ -305,6 +365,9 @@ def start_ftp_server():
 
 
 if __name__ == '__main__':
+    if not os.path.exists('config.ini'):
+        create_config_interactively()
+
     (
         FTP_HOST,
         FTP_PORT,

@@ -4,6 +4,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import types
+from configparser import ConfigParser
 
 # Provide dummy pyftpdlib modules so FTP_server can be imported without the
 # real dependency installed.
@@ -85,3 +86,35 @@ def test_download_file(tmp_path):
     assert FTP_Connection.download_file(fake, 'src.txt', str(tmp_path), True, 'k')
     output = (tmp_path / 'src.txt').read_bytes()
     assert output == b'download-data'
+
+
+def test_create_config_interactively(monkeypatch, tmp_path):
+    responses = iter([
+        '127.0.0.1',  # host
+        '2121',        # port
+        'master',      # master user
+        'pass',        # master pass
+        'guest',       # default user
+        'guestpass',   # default pass
+        '/tmp',        # allowed path
+        '127.0.0.1',   # whitelist
+        '',            # blacklist
+        'n',           # tls
+        '100',         # max connections
+        '2',           # max per ip
+        '60',          # timeout
+        'DEBUG',       # log level
+        'n',           # encryption
+    ])
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('builtins.input', lambda _='': next(responses))
+
+    FTP_server.create_config_interactively()
+
+    cfg = ConfigParser()
+    cfg.read(tmp_path / 'config.ini')
+
+    assert cfg.get('FTP_SERVER', 'FTP_HOST') == '127.0.0.1'
+    assert cfg.getint('FTP_SERVER', 'FTP_PORT') == 2121
+    assert cfg.get('USERS', 'FTP_USER_MASTER') == 'master'
