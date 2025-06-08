@@ -22,6 +22,7 @@ class FakeFTP:
     def __init__(self):
         self.stored = {}
         self.files = {}
+        self.dirs = {'/'}
 
     def storbinary(self, cmd, file, callback=None):
         filename = cmd.split()[1]
@@ -36,6 +37,38 @@ class FakeFTP:
         if data is None:
             raise Exception('missing file')
         callback(data)
+
+    def nlst(self, path=None):
+        path = path or '/'
+        prefix = path.rstrip('/') + '/'
+        result = []
+        for p in self.dirs:
+            if p.startswith(prefix) and p != prefix.rstrip('/'):
+                name = p[len(prefix):].split('/')[0]
+                if name not in result:
+                    result.append(name)
+        for f in self.files:
+            if f.startswith(prefix):
+                name = f[len(prefix):].split('/')[0]
+                if name not in result:
+                    result.append(name)
+        return result
+
+    def mkd(self, path):
+        self.dirs.add(path)
+
+    def mlsd(self, path, facts=None):
+        prefix = path.rstrip('/') if path != '.' else ''
+        if prefix:
+            prefix += '/'
+        for p in sorted(self.dirs.union(self.files)):
+            if p.startswith(prefix) and p != prefix.rstrip('/'):
+                name = p[len(prefix):].split('/')[0]
+                full = prefix + name
+                if full in self.dirs:
+                    yield name, {'type': 'dir'}
+                elif full in self.files:
+                    yield name, {'type': 'file'}
 
     def size(self, filename):
         data = self.files.get(filename)
@@ -125,3 +158,26 @@ def test_create_config_interactively(monkeypatch, tmp_path):
     assert cfg.get('FTP_SERVER', 'FTP_HOST') == '127.0.0.1'
     assert cfg.getint('FTP_SERVER', 'FTP_PORT') == 2121
     assert cfg.get('USERS', 'FTP_USER_MASTER') == 'master'
+
+
+def test_upload_directory(tmp_path):
+    fake = FakeFTP()
+    src = tmp_path / 'srcdir'
+    sub = src / 'sub'
+    sub.mkdir(parents=True)
+    (src / 'a.txt').write_text('1')
+    (sub / 'b.txt').write_text('2')
+    assert FTP_Connection.upload_directory(fake, str(src), '/dest', False, '', lambda *a: None)
+    assert fake.stored['/dest/a.txt'] == b'1'
+    assert fake.stored['/dest/sub/b.txt'] == b'2'
+
+
+def test_download_directory(tmp_path):
+    fake = FakeFTP()
+    fake.dirs.update({'/folder', '/folder/sub'})
+    fake.files['/folder/a.txt'] = b'1'
+    fake.files['/folder/sub/b.txt'] = b'2'
+    out = tmp_path / 'out'
+    assert FTP_Connection.download_directory(fake, '/folder', str(out), False, '', lambda *a: None)
+    assert (out / 'a.txt').read_text() == '1'
+    assert (out / 'sub' / 'b.txt').read_text() == '2'

@@ -21,6 +21,8 @@ file encryption.
 - [x] Streamed file transfers for reduced memory use
 - [x] Upload and download progress bars with multi-selection support
 - [x] Configuration window accessible from the client
+- [x] Modern PyQt interface with fallback to Tkinter
+- [x] Upload and download of folders
 
 ## How to use
 1. Run the server
