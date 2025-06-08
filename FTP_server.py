@@ -201,7 +201,19 @@ def start_ftp_server():
             return result
 
         def ftp_RETR(self, file):
-            self.respond("553 Permission denied: Download não permitido para o usuário padrão")
+            if not check_path(file):
+                self.respond("553 Permission denied")
+                return
+            if not check_ip_whitelist(self.remote_ip):
+                self.respond("553 Permission denied: IP not in whitelist")
+                return
+            if check_ip_blacklist(self.remote_ip):
+                self.respond("553 Permission denied: IP in blacklist")
+                return
+            result = super().ftp_RETR(file)
+            if result.startswith("226"):
+                logger.info(f"Arquivo baixado com sucesso: {file} por {self.username}")
+            return result
 
         def ftp_MKD(self, path):
             if not check_path(path):

@@ -23,16 +23,23 @@ class FakeFTP:
         self.stored = {}
         self.files = {}
 
-    def storbinary(self, cmd, file):
+    def storbinary(self, cmd, file, callback=None):
         filename = cmd.split()[1]
-        self.stored[filename] = file.read()
+        data = file.read()
+        self.stored[filename] = data
+        if callback:
+            callback(data)
 
-    def retrbinary(self, cmd, callback):
+    def retrbinary(self, cmd, callback, blocksize=8192, rest=None):
         filename = cmd.split()[1]
         data = self.files.get(filename)
         if data is None:
             raise Exception('missing file')
         callback(data)
+
+    def size(self, filename):
+        data = self.files.get(filename)
+        return len(data) if data is not None else 0
 
 def test_load_config(tmp_path):
     cfg = tmp_path / 'config.ini'
@@ -74,7 +81,7 @@ def test_upload_file(tmp_path):
     fake = FakeFTP()
     src = tmp_path / 'src.txt'
     src.write_text('data')
-    assert FTP_Connection.upload_file(fake, str(src), 'dest.txt', True, 'k')
+    assert FTP_Connection.upload_file(fake, str(src), 'dest.txt', True, 'k', lambda *a: None)
     expected = FTP_Connection.xor_cipher(b'data', 'k')
     assert fake.stored['dest.txt'] == expected
 
@@ -83,7 +90,7 @@ def test_download_file(tmp_path):
     fake = FakeFTP()
     encrypted = FTP_Connection.xor_cipher(b'download-data', 'k')
     fake.files['src.txt'] = encrypted
-    assert FTP_Connection.download_file(fake, 'src.txt', str(tmp_path), True, 'k')
+    assert FTP_Connection.download_file(fake, 'src.txt', str(tmp_path), True, 'k', lambda *a: None)
     output = (tmp_path / 'src.txt').read_bytes()
     assert output == b'download-data'
 

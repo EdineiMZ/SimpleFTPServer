@@ -111,7 +111,14 @@ def show_wait_popup():
 
 
 # Função para realizar upload de arquivo
-def upload_file(ftp, file_path, file_name, encryption_enabled=False, key=''):
+def upload_file(
+    ftp,
+    file_path,
+    file_name,
+    encryption_enabled=False,
+    key='',
+    progress_callback=None,
+):
     try:
         if not os.path.isfile(file_path):
             logger.error(f"Caminho inválido para upload: {file_path}")
@@ -121,10 +128,23 @@ def upload_file(ftp, file_path, file_name, encryption_enabled=False, key=''):
         if encryption_enabled:
             with open(file_path, 'rb') as file:
                 data = xor_cipher(file.read(), key)
-            ftp.storbinary(f"STOR {file_name}", io.BytesIO(data))
+            ftp.storbinary(
+                f"STOR {file_name}",
+                io.BytesIO(data),
+                callback=(lambda d: progress_callback(len(d), len(data)) if progress_callback else None),
+            )
         else:
+            total = os.path.getsize(file_path)
+            sent = 0
+
+            def cb(data):
+                nonlocal sent
+                sent += len(data)
+                if progress_callback:
+                    progress_callback(sent, total)
+
             with open(file_path, 'rb') as file:
-                ftp.storbinary(f"STOR {file_name}", file)
+                ftp.storbinary(f"STOR {file_name}", file, callback=cb)
         elapsed = time.perf_counter() - start
         logger.info(f"Upload do arquivo {file_name} concluído em {elapsed:.2f}s")
         return True
@@ -134,7 +154,14 @@ def upload_file(ftp, file_path, file_name, encryption_enabled=False, key=''):
 
 
 # Função para realizar download de arquivo
-def download_file(ftp, file_name, download_path, encryption_enabled=False, key=''):
+def download_file(
+    ftp,
+    file_name,
+    download_path,
+    encryption_enabled=False,
+    key='',
+    progress_callback=None,
+):
     try:
         if not os.path.isdir(download_path):
             logger.error(f"Diretório de download inválido: {download_path}")
@@ -143,15 +170,33 @@ def download_file(ftp, file_name, download_path, encryption_enabled=False, key='
         local_file_path = os.path.join(download_path, safe_name)
 
         start = time.perf_counter()
+        size = ftp.size(file_name) or 0
+        received = 0
+
+        def cb(data):
+            nonlocal received
+            received += len(data)
+            if progress_callback:
+                progress_callback(received, size)
+
         if encryption_enabled:
             buffer = io.BytesIO()
-            ftp.retrbinary(f"RETR {file_name}", buffer.write)
+
+            def write_and_update(data):
+                cb(data)
+                buffer.write(data)
+
+            ftp.retrbinary(f"RETR {file_name}", write_and_update)
             data = xor_cipher(buffer.getvalue(), key)
             with open(local_file_path, 'wb') as file:
                 file.write(data)
         else:
             with open(local_file_path, 'wb') as file:
-                ftp.retrbinary(f"RETR {file_name}", file.write)
+                def write_and_update(data):
+                    cb(data)
+                    file.write(data)
+
+                ftp.retrbinary(f"RETR {file_name}", write_and_update)
         elapsed = time.perf_counter() - start
         logger.info(f"Download do arquivo {file_name} concluído em {elapsed:.2f}s")
         return True
@@ -172,8 +217,18 @@ def list_files(ftp):
 
 
 # Funções de interface gráfica
-def perform_ftp_operation_with_feedback_and_wait_popup(operation_func, *args):
-    wait_popup = show_wait_popup()
+def perform_ftp_operation_with_progress(title, operation_func, *args):
+    progress_win = tk.Toplevel()
+    progress_win.title(title)
+    progress_win.geometry("300x100")
+    bar = ttk.Progressbar(progress_win, orient="horizontal", length=250, mode="determinate")
+    bar.pack(pady=20)
+
+    def update(curr, total):
+        bar["maximum"] = total if total else 1
+        bar["value"] = curr
+        progress_win.update_idletasks()
+
     try:
         host, port, user, password, enc_enabled, enc_key = load_ftp_config()
         ftp = FTP()
@@ -181,7 +236,11 @@ def perform_ftp_operation_with_feedback_and_wait_popup(operation_func, *args):
         ftp.login(user, password)
 
         operation_result = operation_func(
-            ftp, *args, encryption_enabled=enc_enabled, key=enc_key
+            ftp,
+            *args,
+            encryption_enabled=enc_enabled,
+            key=enc_key,
+            progress_callback=update,
         )
         if operation_result:
             messagebox.showinfo("Sucesso", "Operação realizada com sucesso")
@@ -193,19 +252,22 @@ def perform_ftp_operation_with_feedback_and_wait_popup(operation_func, *args):
     finally:
         try:
             ftp.quit()
-        except:
+        except Exception:
             pass
-        wait_popup.destroy()
+        progress_win.destroy()
 
 
 def upload():
-    file_path = filedialog.askopenfilename(initialdir="/", title="Selecione o arquivo")
-    if not file_path:
-        return  # Cancelado pelo usuário
+    file_paths = filedialog.askopenfilenames(initialdir="/", title="Selecione os arquivos")
+    if not file_paths:
+        return
 
-    file_name = os.path.basename(file_path)
-    threading.Thread(target=perform_ftp_operation_with_feedback_and_wait_popup,
-                     args=(upload_file, file_path, file_name)).start()
+    for path in file_paths:
+        name = os.path.basename(path)
+        threading.Thread(
+            target=perform_ftp_operation_with_progress,
+            args=(f"Upload {name}", upload_file, path, name),
+        ).start()
 
 
 def download():
@@ -221,32 +283,33 @@ def download():
             return
 
         download_window = tk.Toplevel()
-        download_window.geometry("300x150")
-        download_window.title("Selecionar Arquivo para Download")
+        download_window.geometry("300x250")
+        download_window.title("Selecionar Arquivos para Download")
 
-        label = tk.Label(download_window, text="Selecione o arquivo para download:")
+        label = tk.Label(download_window, text="Selecione os arquivos para download:")
         label.pack(pady=10)
 
-        selected_file = tk.StringVar()
-        selected_file.set(files[0] if files else "")  # Seleciona o primeiro arquivo por padrão
-        dropdown = ttk.Combobox(download_window, textvariable=selected_file, values=files, state="readonly", width=30)
-        dropdown.pack(pady=10)
+        listbox = tk.Listbox(download_window, selectmode=tk.MULTIPLE, width=40, height=8)
+        for f in files:
+            listbox.insert(tk.END, f)
+        listbox.pack(pady=10)
 
         def start_download():
-            file_name = selected_file.get()
-            if not file_name:
+            choices = [listbox.get(i) for i in listbox.curselection()]
+            if not choices:
                 messagebox.showerror("Erro", "Nenhum arquivo selecionado")
                 return
 
-            download_path = filedialog.askdirectory(initialdir="/", title="Selecione onde salvar o arquivo")
+            download_path = filedialog.askdirectory(initialdir="/", title="Selecione onde salvar os arquivos")
             if not download_path:
-                return  # Cancelado pelo usuário
+                return
 
             download_window.destroy()
-            threading.Thread(
-                target=perform_ftp_operation_with_feedback_and_wait_popup,
-                args=(download_file, file_name, download_path)
-            ).start()
+            for choice in choices:
+                threading.Thread(
+                    target=perform_ftp_operation_with_progress,
+                    args=(f"Download {choice}", download_file, choice, download_path)
+                ).start()
 
         btn_download = tk.Button(download_window, text="Download", command=start_download)
         btn_download.pack(pady=10)
@@ -277,8 +340,11 @@ def main():
     clienttk.title("Cliente FTP")
     clienttk.geometry("300x200")
 
+    bt_conf = tk.Button(clienttk, width=20, text="Configurações", command=first_time_tutorial)
+    bt_conf.place(x=50, y=20)
+
     bt1 = tk.Button(clienttk, width=20, text="Upload de Arquivo", command=upload)
-    bt1.place(x=50, y=50)
+    bt1.place(x=50, y=60)
 
     bt2 = tk.Button(clienttk, width=20, text="Download de Arquivo", command=download)
     bt2.place(x=50, y=100)
