@@ -3,11 +3,12 @@ import logging
 import configparser
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-
-FIRST_RUN_FILE = 'connections.ini'
 from ftplib import FTP
 import threading
 import io
+import time
+
+FIRST_RUN_FILE = 'connections.ini'
 
 # Configuração do log
 logging.basicConfig(
@@ -16,6 +17,11 @@ logging.basicConfig(
     filemode='w',
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+console = logging.StreamHandler()
+console.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logging.getLogger().addHandler(console)
+
+logger = logging.getLogger(__name__)
 
 
 def xor_cipher(data: bytes, key: str) -> bytes:
@@ -40,7 +46,7 @@ def load_ftp_config():
         return host, port, user, password, encryption_enabled, encryption_key
     except FileNotFoundError:
         messagebox.showerror("Erro", "Arquivo 'connections.ini' não encontrado.")
-        logging.error("Arquivo 'connections.ini' não encontrado.")
+        logger.error("Arquivo 'connections.ini' não encontrado.")
         raise  # Re-raise a exceção para que o programa possa lidar com isso
 
 
@@ -108,17 +114,22 @@ def show_wait_popup():
 def upload_file(ftp, file_path, file_name, encryption_enabled=False, key=''):
     try:
         if not os.path.isfile(file_path):
-            logging.error(f"Caminho inválido para upload: {file_path}")
+            logger.error(f"Caminho inválido para upload: {file_path}")
             return False
-        with open(file_path, 'rb') as file:
-            data = file.read()
+
+        start = time.perf_counter()
         if encryption_enabled:
-            data = xor_cipher(data, key)
-        ftp.storbinary(f"STOR {file_name}", io.BytesIO(data))
-        logging.info(f"Upload do arquivo {file_name} concluído com sucesso")
+            with open(file_path, 'rb') as file:
+                data = xor_cipher(file.read(), key)
+            ftp.storbinary(f"STOR {file_name}", io.BytesIO(data))
+        else:
+            with open(file_path, 'rb') as file:
+                ftp.storbinary(f"STOR {file_name}", file)
+        elapsed = time.perf_counter() - start
+        logger.info(f"Upload do arquivo {file_name} concluído em {elapsed:.2f}s")
         return True
     except Exception as e:
-        logging.error(f"Erro durante upload de arquivo: {str(e)}")
+        logger.error(f"Erro durante upload de arquivo: {str(e)}")
         return False
 
 
@@ -126,21 +137,26 @@ def upload_file(ftp, file_path, file_name, encryption_enabled=False, key=''):
 def download_file(ftp, file_name, download_path, encryption_enabled=False, key=''):
     try:
         if not os.path.isdir(download_path):
-            logging.error(f"Diretório de download inválido: {download_path}")
+            logger.error(f"Diretório de download inválido: {download_path}")
             return False
         safe_name = os.path.basename(file_name)
         local_file_path = os.path.join(download_path, safe_name)
-        buffer = io.BytesIO()
-        ftp.retrbinary(f"RETR {file_name}", buffer.write)
-        data = buffer.getvalue()
+
+        start = time.perf_counter()
         if encryption_enabled:
-            data = xor_cipher(data, key)
-        with open(local_file_path, 'wb') as file:
-            file.write(data)
-        logging.info(f"Download do arquivo {file_name} concluído com sucesso")
+            buffer = io.BytesIO()
+            ftp.retrbinary(f"RETR {file_name}", buffer.write)
+            data = xor_cipher(buffer.getvalue(), key)
+            with open(local_file_path, 'wb') as file:
+                file.write(data)
+        else:
+            with open(local_file_path, 'wb') as file:
+                ftp.retrbinary(f"RETR {file_name}", file.write)
+        elapsed = time.perf_counter() - start
+        logger.info(f"Download do arquivo {file_name} concluído em {elapsed:.2f}s")
         return True
     except Exception as e:
-        logging.error(f"Erro durante download de arquivo: {str(e)}")
+        logger.error(f"Erro durante download de arquivo: {str(e)}")
         return False
 
 
@@ -148,10 +164,10 @@ def download_file(ftp, file_name, download_path, encryption_enabled=False, key='
 def list_files(ftp):
     try:
         files = ftp.nlst()
-        logging.info(f"Arquivos no diretório do servidor FTP: {files}")
+        logger.info(f"Arquivos no diretório do servidor FTP: {files}")
         return files
     except Exception as e:
-        logging.error(f"Erro ao listar arquivos no servidor FTP: {str(e)}")
+        logger.error(f"Erro ao listar arquivos no servidor FTP: {str(e)}")
         return None
 
 
@@ -172,7 +188,7 @@ def perform_ftp_operation_with_feedback_and_wait_popup(operation_func, *args):
         else:
             messagebox.showerror("Erro", "Erro durante a operação")
     except Exception as e:
-        logging.error(f"Erro ao conectar ao servidor FTP: {str(e)}")
+        logger.error(f"Erro ao conectar ao servidor FTP: {str(e)}")
         messagebox.showerror("Erro", f"Erro ao conectar ao servidor FTP: {str(e)}")
     finally:
         try:
@@ -236,7 +252,7 @@ def download():
         btn_download.pack(pady=10)
 
     except Exception as e:
-        logging.error(f"Erro ao conectar ao servidor FTP: {str(e)}")
+        logger.error(f"Erro ao conectar ao servidor FTP: {str(e)}")
         messagebox.showerror("Erro", f"Erro ao conectar ao servidor FTP: {str(e)}")
 
     finally:

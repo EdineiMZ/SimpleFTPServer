@@ -17,6 +17,8 @@ file encryption.
 - [x] FTP Server
 - [x] FTP Client
 - [x] FTP Server and Client with GUI, multithreading and file upload/download
+- [x] Improved logs sent to both console and file
+- [x] Streamed file transfers for reduced memory use
 
 ## How to use
 1. Run the server

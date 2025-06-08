@@ -5,6 +5,9 @@ from pyftpdlib.authorizers import DummyAuthorizer
 from pyftpdlib.handlers import FTPHandler, TLS_FTPHandler
 from pyftpdlib.servers import FTPServer
 
+# Configuração de log
+logger = logging.getLogger(__name__)
+
 
 def create_config_interactively():
     """Prompt the user for initial server configuration and write config.ini."""
@@ -194,7 +197,7 @@ def start_ftp_server():
 
             result = super().ftp_STOR(file, mode)
             if result.startswith("226"):
-                logging.info(f"Arquivo enviado com sucesso: {file} por {self.username}")
+                logger.info(f"Arquivo enviado com sucesso: {file} por {self.username}")
             return result
 
         def ftp_RETR(self, file):
@@ -212,7 +215,7 @@ def start_ftp_server():
                 return
             result = super().ftp_MKD(path)
             if result.startswith("257"):
-                logging.info(f"Diretório criado com sucesso: {path} por {self.username}")
+                logger.info(f"Diretório criado com sucesso: {path} por {self.username}")
             return result
 
         def ftp_RMD(self, path):
@@ -227,7 +230,7 @@ def start_ftp_server():
                 return
             result = super().ftp_RMD(path)
             if result.startswith("250"):
-                logging.info(f"Diretório removido com sucesso: {path} por {self.username}")
+                logger.info(f"Diretório removido com sucesso: {path} por {self.username}")
             return result
 
         def ftp_DELE(self, path):
@@ -242,7 +245,7 @@ def start_ftp_server():
                 return
             result = super().ftp_DELE(path)
             if result.startswith("250"):
-                logging.info(f"Arquivo removido com sucesso: {path} por {self.username}")
+                logger.info(f"Arquivo removido com sucesso: {path} por {self.username}")
             return result
 
         def ftp_RNFR(self, path):
@@ -257,7 +260,7 @@ def start_ftp_server():
                 return
             result = super().ftp_RNFR(path)
             if result.startswith("350"):
-                logging.info(f"Renomeação de arquivo iniciada: {path} por {self.username}")
+                logger.info(f"Renomeação de arquivo iniciada: {path} por {self.username}")
             return result
 
         def ftp_RNTO(self, path):
@@ -272,7 +275,7 @@ def start_ftp_server():
                 return
             result = super().ftp_RNTO(path)
             if result.startswith("250"):
-                logging.info(f"Arquivo renomeado com sucesso para: {path} por {self.username}")
+                logger.info(f"Arquivo renomeado com sucesso para: {path} por {self.username}")
             return result
 
         def ftp_APPE(self, file):
@@ -288,60 +291,60 @@ def start_ftp_server():
 
             result = super().ftp_APPE(file)
             if result.startswith("226"):
-                logging.info(f"Conteúdo adicionado com sucesso ao arquivo: {file} por {self.username}")
+                logger.info(f"Conteúdo adicionado com sucesso ao arquivo: {file} por {self.username}")
             return result
 
         def on_login(self, username):
-            logging.info(f'Usuário {username} logado com sucesso')
+            logger.info(f'Usuário {username} logado com sucesso')
 
         def on_logout(self, username):
-            logging.info(f'Usuário {username} deslogado com sucesso')
+            logger.info(f'Usuário {username} deslogado com sucesso')
 
         def on_login_failed(self, username):
-            logging.info(f'Falha no login para o usuário {username}')
+            logger.info(f'Falha no login para o usuário {username}')
 
         def on_file_sent(self, file):
-            logging.info(f'Arquivo enviado: {file}')
+            logger.info(f'Arquivo enviado: {file}')
 
         def on_connect(self):
             if check_ip_blacklist(self.remote_ip):
                 self.respond("530 Permission denied: IP in blacklist")
                 self.close()
                 return
-            logging.info(f'Conexão estabelecida do IP: {self.remote_ip}')
+            logger.info(f'Conexão estabelecida do IP: {self.remote_ip}')
 
         def on_disconnect(self):
-            logging.info(f'Desconexão do IP: {self.remote_ip}')
+            logger.info(f'Desconexão do IP: {self.remote_ip}')
 
         def on_file_received(self, file):
-            logging.info(f'Arquivo recebido: {file}')
+            logger.info(f'Arquivo recebido: {file}')
 
         def on_incomplete_file_received(self, file):
-            logging.info(f'Arquivo recebido incompleto: {file}')
+            logger.info(f'Arquivo recebido incompleto: {file}')
 
         def on_delete_file_failed(self, file):
-            logging.info(f'Falha ao remover arquivo: {file}')
+            logger.info(f'Falha ao remover arquivo: {file}')
 
         def on_delete_directory_failed(self, path):
-            logging.info(f'Falha ao remover diretório: {path}')
+            logger.info(f'Falha ao remover diretório: {path}')
 
         def on_rename_failed(self, fromname, toname):
-            logging.info(f'Falha ao renomear arquivo de {fromname} para {toname}')
+            logger.info(f'Falha ao renomear arquivo de {fromname} para {toname}')
 
         def on_mkdir_failed(self, path):
-            logging.info(f'Falha ao criar diretório: {path}')
+            logger.info(f'Falha ao criar diretório: {path}')
 
         def on_file_sent_failed(self, file):
-            logging.info(f'Falha ao enviar arquivo: {file}')
+            logger.info(f'Falha ao enviar arquivo: {file}')
 
         def on_file_received_failed(self, file):
-            logging.info(f'Falha ao receber arquivo: {file}')
+            logger.info(f'Falha ao receber arquivo: {file}')
 
         def server_quit(self):
-            logging.info('Servidor encerrado')
+            logger.info('Servidor encerrado')
 
         def server_starting(self, evt):
-            logging.info('Iniciando servidor FTP...')
+            logger.info('Iniciando servidor FTP...')
 
     # Cria um handler FTP com a verificação personalizada
     handler = MyHandler
@@ -359,9 +362,9 @@ def start_ftp_server():
     server.max_cons_per_ip = MAX_CONNECTIONS_PER_IP
 
     # Inicia o servidor FTP
-    logging.info(f'Servidor FTP iniciado em {FTP_HOST}:{FTP_PORT}')
+    logger.info(f'Servidor FTP iniciado em {FTP_HOST}:{FTP_PORT}')
     server.serve_forever()
-    logging.info('Parando servidor FTP...')
+    logger.info('Parando servidor FTP...')
 
 
 if __name__ == '__main__':
@@ -392,12 +395,20 @@ if __name__ == '__main__':
     ) = load_config()
 
     log_level = getattr(logging, LOG_LEVEL, logging.INFO)
-    logging.basicConfig(filename='ftp_server.log', level=log_level)
-    logging.info('Carregando configurações do servidor FTP...')
-    logging.info('Lendo configurações do arquivo config.ini...')
+    logging.basicConfig(
+        filename='ftp_server.log',
+        level=log_level,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+    console = logging.StreamHandler()
+    console.setLevel(log_level)
+    console.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logging.getLogger().addHandler(console)
+    logger.info('Carregando configurações do servidor FTP...')
+    logger.info('Lendo configurações do arquivo config.ini...')
 
     print(f'Servidor FTP iniciado em {FTP_HOST}:{FTP_PORT}...')
-    logging.info(f'Servidor FTP sendo iniciado em {FTP_HOST}:{FTP_PORT}...')
+    logger.info(f'Servidor FTP sendo iniciado em {FTP_HOST}:{FTP_PORT}...')
     start_ftp_server()
 
 # Para executar o servidor, basta rodar o script FTP_server.py
