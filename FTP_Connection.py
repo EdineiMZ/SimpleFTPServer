@@ -3,11 +3,12 @@ import logging
 import configparser
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-
-FIRST_RUN_FILE = 'connections.ini'
 from ftplib import FTP
 import threading
 import io
+import time
+
+FIRST_RUN_FILE = 'connections.ini'
 
 # Configuração do log
 logging.basicConfig(
@@ -16,6 +17,11 @@ logging.basicConfig(
     filemode='w',
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+console = logging.StreamHandler()
+console.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logging.getLogger().addHandler(console)
+
+logger = logging.getLogger(__name__)
 
 
 def xor_cipher(data: bytes, key: str) -> bytes:
@@ -40,7 +46,7 @@ def load_ftp_config():
         return host, port, user, password, encryption_enabled, encryption_key
     except FileNotFoundError:
         messagebox.showerror("Erro", "Arquivo 'connections.ini' não encontrado.")
-        logging.error("Arquivo 'connections.ini' não encontrado.")
+        logger.error("Arquivo 'connections.ini' não encontrado.")
         raise  # Re-raise a exceção para que o programa possa lidar com isso
 
 
@@ -105,42 +111,176 @@ def show_wait_popup():
 
 
 # Função para realizar upload de arquivo
-def upload_file(ftp, file_path, file_name, encryption_enabled=False, key=''):
+def upload_file(
+    ftp,
+    file_path,
+    file_name,
+    encryption_enabled=False,
+    key='',
+    progress_callback=None,
+):
     try:
         if not os.path.isfile(file_path):
-            logging.error(f"Caminho inválido para upload: {file_path}")
+            logger.error(f"Caminho inválido para upload: {file_path}")
             return False
-        with open(file_path, 'rb') as file:
-            data = file.read()
+
+        start = time.perf_counter()
         if encryption_enabled:
-            data = xor_cipher(data, key)
-        ftp.storbinary(f"STOR {file_name}", io.BytesIO(data))
-        logging.info(f"Upload do arquivo {file_name} concluído com sucesso")
+            with open(file_path, 'rb') as file:
+                data = xor_cipher(file.read(), key)
+            ftp.storbinary(
+                f"STOR {file_name}",
+                io.BytesIO(data),
+                callback=(lambda d: progress_callback(len(d), len(data)) if progress_callback else None),
+            )
+        else:
+            total = os.path.getsize(file_path)
+            sent = 0
+
+            def cb(data):
+                nonlocal sent
+                sent += len(data)
+                if progress_callback:
+                    progress_callback(sent, total)
+
+            with open(file_path, 'rb') as file:
+                ftp.storbinary(f"STOR {file_name}", file, callback=cb)
+        elapsed = time.perf_counter() - start
+        logger.info(f"Upload do arquivo {file_name} concluído em {elapsed:.2f}s")
         return True
     except Exception as e:
-        logging.error(f"Erro durante upload de arquivo: {str(e)}")
+        logger.error(f"Erro durante upload de arquivo: {str(e)}")
         return False
 
 
 # Função para realizar download de arquivo
-def download_file(ftp, file_name, download_path, encryption_enabled=False, key=''):
+def download_file(
+    ftp,
+    file_name,
+    download_path,
+    encryption_enabled=False,
+    key='',
+    progress_callback=None,
+):
     try:
         if not os.path.isdir(download_path):
-            logging.error(f"Diretório de download inválido: {download_path}")
+            logger.error(f"Diretório de download inválido: {download_path}")
             return False
         safe_name = os.path.basename(file_name)
         local_file_path = os.path.join(download_path, safe_name)
-        buffer = io.BytesIO()
-        ftp.retrbinary(f"RETR {file_name}", buffer.write)
-        data = buffer.getvalue()
+
+        start = time.perf_counter()
+        size = ftp.size(file_name) or 0
+        received = 0
+
+        def cb(data):
+            nonlocal received
+            received += len(data)
+            if progress_callback:
+                progress_callback(received, size)
+
         if encryption_enabled:
-            data = xor_cipher(data, key)
-        with open(local_file_path, 'wb') as file:
-            file.write(data)
-        logging.info(f"Download do arquivo {file_name} concluído com sucesso")
+            buffer = io.BytesIO()
+
+            def write_and_update(data):
+                cb(data)
+                buffer.write(data)
+
+            ftp.retrbinary(f"RETR {file_name}", write_and_update)
+            data = xor_cipher(buffer.getvalue(), key)
+            with open(local_file_path, 'wb') as file:
+                file.write(data)
+        else:
+            with open(local_file_path, 'wb') as file:
+                def write_and_update(data):
+                    cb(data)
+                    file.write(data)
+
+                ftp.retrbinary(f"RETR {file_name}", write_and_update)
+        elapsed = time.perf_counter() - start
+        logger.info(f"Download do arquivo {file_name} concluído em {elapsed:.2f}s")
         return True
     except Exception as e:
-        logging.error(f"Erro durante download de arquivo: {str(e)}")
+        logger.error(f"Erro durante download de arquivo: {str(e)}")
+        return False
+
+
+# Função para realizar upload de diretório
+def upload_directory(
+    ftp,
+    dir_path,
+    remote_dir='.',
+    encryption_enabled=False,
+    key='',
+    progress_callback=None,
+):
+    try:
+        if not os.path.isdir(dir_path):
+            logger.error(f"Diretório inválido para upload: {dir_path}")
+            return False
+
+        for root, _, files in os.walk(dir_path):
+            rel = os.path.relpath(root, dir_path)
+            target = os.path.join(remote_dir, rel).replace('\\', '/') if rel != '.' else remote_dir.rstrip('/')
+            if rel != '.':
+                try:
+                    ftp.mkd(target)
+                except Exception:
+                    pass
+            for name in files:
+                local_file = os.path.join(root, name)
+                remote_file = os.path.join(target, name).replace('\\', '/')
+                if not upload_file(
+                    ftp,
+                    local_file,
+                    remote_file,
+                    encryption_enabled,
+                    key,
+                    progress_callback,
+                ):
+                    return False
+        return True
+    except Exception as e:
+        logger.error(f"Erro durante upload de pasta: {str(e)}")
+        return False
+
+
+# Função para realizar download de diretório
+def download_directory(
+    ftp,
+    remote_dir,
+    local_path,
+    encryption_enabled=False,
+    key='',
+    progress_callback=None,
+):
+    try:
+        os.makedirs(local_path, exist_ok=True)
+        for name, facts in ftp.mlsd(remote_dir, facts=['type']):
+            if name in {'.', '..'}:
+                continue
+            remote_item = f"{remote_dir.rstrip('/')}/{name}"
+            if facts.get('type') == 'dir':
+                download_directory(
+                    ftp,
+                    remote_item,
+                    os.path.join(local_path, name),
+                    encryption_enabled,
+                    key,
+                    progress_callback,
+                )
+            else:
+                download_file(
+                    ftp,
+                    remote_item,
+                    local_path,
+                    encryption_enabled,
+                    key,
+                    progress_callback,
+                )
+        return True
+    except Exception as e:
+        logger.error(f"Erro durante download de pasta: {str(e)}")
         return False
 
 
@@ -148,16 +288,26 @@ def download_file(ftp, file_name, download_path, encryption_enabled=False, key='
 def list_files(ftp):
     try:
         files = ftp.nlst()
-        logging.info(f"Arquivos no diretório do servidor FTP: {files}")
+        logger.info(f"Arquivos no diretório do servidor FTP: {files}")
         return files
     except Exception as e:
-        logging.error(f"Erro ao listar arquivos no servidor FTP: {str(e)}")
+        logger.error(f"Erro ao listar arquivos no servidor FTP: {str(e)}")
         return None
 
 
 # Funções de interface gráfica
-def perform_ftp_operation_with_feedback_and_wait_popup(operation_func, *args):
-    wait_popup = show_wait_popup()
+def perform_ftp_operation_with_progress(title, operation_func, *args):
+    progress_win = tk.Toplevel()
+    progress_win.title(title)
+    progress_win.geometry("300x100")
+    bar = ttk.Progressbar(progress_win, orient="horizontal", length=250, mode="determinate")
+    bar.pack(pady=20)
+
+    def update(curr, total):
+        bar["maximum"] = total if total else 1
+        bar["value"] = curr
+        progress_win.update_idletasks()
+
     try:
         host, port, user, password, enc_enabled, enc_key = load_ftp_config()
         ftp = FTP()
@@ -165,31 +315,38 @@ def perform_ftp_operation_with_feedback_and_wait_popup(operation_func, *args):
         ftp.login(user, password)
 
         operation_result = operation_func(
-            ftp, *args, encryption_enabled=enc_enabled, key=enc_key
+            ftp,
+            *args,
+            encryption_enabled=enc_enabled,
+            key=enc_key,
+            progress_callback=update,
         )
         if operation_result:
             messagebox.showinfo("Sucesso", "Operação realizada com sucesso")
         else:
             messagebox.showerror("Erro", "Erro durante a operação")
     except Exception as e:
-        logging.error(f"Erro ao conectar ao servidor FTP: {str(e)}")
+        logger.error(f"Erro ao conectar ao servidor FTP: {str(e)}")
         messagebox.showerror("Erro", f"Erro ao conectar ao servidor FTP: {str(e)}")
     finally:
         try:
             ftp.quit()
-        except:
+        except Exception:
             pass
-        wait_popup.destroy()
+        progress_win.destroy()
 
 
 def upload():
-    file_path = filedialog.askopenfilename(initialdir="/", title="Selecione o arquivo")
-    if not file_path:
-        return  # Cancelado pelo usuário
+    file_paths = filedialog.askopenfilenames(initialdir="/", title="Selecione os arquivos")
+    if not file_paths:
+        return
 
-    file_name = os.path.basename(file_path)
-    threading.Thread(target=perform_ftp_operation_with_feedback_and_wait_popup,
-                     args=(upload_file, file_path, file_name)).start()
+    for path in file_paths:
+        name = os.path.basename(path)
+        threading.Thread(
+            target=perform_ftp_operation_with_progress,
+            args=(f"Upload {name}", upload_file, path, name),
+        ).start()
 
 
 def download():
@@ -205,38 +362,39 @@ def download():
             return
 
         download_window = tk.Toplevel()
-        download_window.geometry("300x150")
-        download_window.title("Selecionar Arquivo para Download")
+        download_window.geometry("300x250")
+        download_window.title("Selecionar Arquivos para Download")
 
-        label = tk.Label(download_window, text="Selecione o arquivo para download:")
+        label = tk.Label(download_window, text="Selecione os arquivos para download:")
         label.pack(pady=10)
 
-        selected_file = tk.StringVar()
-        selected_file.set(files[0] if files else "")  # Seleciona o primeiro arquivo por padrão
-        dropdown = ttk.Combobox(download_window, textvariable=selected_file, values=files, state="readonly", width=30)
-        dropdown.pack(pady=10)
+        listbox = tk.Listbox(download_window, selectmode=tk.MULTIPLE, width=40, height=8)
+        for f in files:
+            listbox.insert(tk.END, f)
+        listbox.pack(pady=10)
 
         def start_download():
-            file_name = selected_file.get()
-            if not file_name:
+            choices = [listbox.get(i) for i in listbox.curselection()]
+            if not choices:
                 messagebox.showerror("Erro", "Nenhum arquivo selecionado")
                 return
 
-            download_path = filedialog.askdirectory(initialdir="/", title="Selecione onde salvar o arquivo")
+            download_path = filedialog.askdirectory(initialdir="/", title="Selecione onde salvar os arquivos")
             if not download_path:
-                return  # Cancelado pelo usuário
+                return
 
             download_window.destroy()
-            threading.Thread(
-                target=perform_ftp_operation_with_feedback_and_wait_popup,
-                args=(download_file, file_name, download_path)
-            ).start()
+            for choice in choices:
+                threading.Thread(
+                    target=perform_ftp_operation_with_progress,
+                    args=(f"Download {choice}", download_file, choice, download_path)
+                ).start()
 
         btn_download = tk.Button(download_window, text="Download", command=start_download)
         btn_download.pack(pady=10)
 
     except Exception as e:
-        logging.error(f"Erro ao conectar ao servidor FTP: {str(e)}")
+        logger.error(f"Erro ao conectar ao servidor FTP: {str(e)}")
         messagebox.showerror("Erro", f"Erro ao conectar ao servidor FTP: {str(e)}")
 
     finally:
@@ -247,7 +405,7 @@ def download():
 
 
 # Funções de interface gráfica
-def main():
+def main_tk():
     if not os.path.exists(FIRST_RUN_FILE):
         first_time_tutorial()
 
@@ -261,13 +419,29 @@ def main():
     clienttk.title("Cliente FTP")
     clienttk.geometry("300x200")
 
+    bt_conf = tk.Button(clienttk, width=20, text="Configurações", command=first_time_tutorial)
+    bt_conf.place(x=50, y=20)
+
     bt1 = tk.Button(clienttk, width=20, text="Upload de Arquivo", command=upload)
-    bt1.place(x=50, y=50)
+    bt1.place(x=50, y=60)
 
     bt2 = tk.Button(clienttk, width=20, text="Download de Arquivo", command=download)
     bt2.place(x=50, y=100)
 
     clienttk.mainloop()
+
+
+def main():
+    try:
+        from PyQt5 import QtWidgets  # type: ignore
+    except Exception:
+        logger.warning('PyQt5 não encontrado, usando interface Tkinter')
+        main_tk()
+        return
+
+    from client_pyqt import main as qt_main
+
+    qt_main()
 
 
 if __name__ == '__main__':

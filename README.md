@@ -10,11 +10,19 @@ file encryption.
    limits and log level.
 2. Ensure the dependencies are installed (`pyftpdlib`).
 3. Run the server with `python FTP_server.py`.
+   If `config.ini` is missing, a console wizard will ask for the
+   initial settings and create the file for you.
 
 ## Features
 - [x] FTP Server
 - [x] FTP Client
 - [x] FTP Server and Client with GUI, multithreading and file upload/download
+- [x] Improved logs sent to both console and file
+- [x] Streamed file transfers for reduced memory use
+- [x] Upload and download progress bars with multi-selection support
+- [x] Configuration window accessible from the client
+- [x] Modern PyQt interface with fallback to Tkinter
+- [x] Upload and download of folders
 
 ## How to use
 1. Run the server
